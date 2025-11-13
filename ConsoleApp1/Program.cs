@@ -7,20 +7,78 @@ public class HelloWorld
 {
     public static void Main(string[] args)
     {
-        object obj = new test();
-        Type type = obj.GetType();
-        foreach(FieldInfo propertyInfo in type.())
+        generateGlobelQueryFilterForIsDeleted();
+    }
+
+
+    public static void generateGlobelQueryFilterForIsDeleted()
+    {
+        string sourceFolder = @"E:\Project\Github\ZedClubCRM\Persistence\Entities\";
+        string targetFile = @"E:\Project\Github\ZedClubCRM\Persistence\Entities\Partial\ZedClubCrmContext.cs";
+
+
+        // read context file
+        string contextContent = File.ReadAllText(targetFile);
+
+        // Collect entity names that have IsDeleted property
+        List<string> entityNames = new List<string>();
+
+        foreach (var file in Directory.GetFiles(sourceFolder, "*.cs", searchOption: SearchOption.TopDirectoryOnly))
         {
-            Console.WriteLine(propertyInfo.Name);
+            string content = File.ReadAllText(file);
+            var classMatch = Regex.Match(content, @"partial\s+class\s+(\w+)");
+            if (!classMatch.Success)
+            {
+                // not a partial class, skip
+                //Console.WriteLine($"\nthere is a class mismatch here \n{file}\n");
+                continue;
+            }
+            string className = classMatch.Groups[1].Value;
+
+
+            var isDeletedMatch = Regex.Match(content, @"public\s+bool\s+IsDeleted\s*{\s*get;\s*set;\s*}");
+            if (!isDeletedMatch.Success)
+            {
+                // no IsDeleted property, skip
+                continue;
+            }
+
+            if (!entityNames.Contains(className))
+            {
+                entityNames.Add(className);
+            }
+
+        }
+
+        // build lines to insert
+        string filtersText = "";
+        foreach (var entityName in entityNames)
+        {
+            filtersText += $"\t\t\tmodelBuilder.Entity<{entityName}>().HasQueryFilter(e => !e.IsDeleted);\n";
+        }
+
+
+        // find the region
+        Regex regionRegex = new Regex(@"#region\s+Global\s+Query\s+Filters(.*?)#endregion", RegexOptions.Singleline);
+
+        if (regionRegex.IsMatch(contextContent))
+        {
+            string newRegionContent = "#region Global Query Filters\n\n" + filtersText + "\n    #endregion";
+            contextContent = regionRegex.Replace(contextContent, newRegionContent);
+            File.WriteAllText(targetFile, contextContent);
         }
     }
+
+
+
 
     public static void generatePartialClasses()
     {
         // 
-        string sourceFolder = @"E:\GitHubProjects\Zed\ZedClubCRM\Persistence\Entities\";
+        string sourceFolder = @"E:\Project\Github\ZedClubCRM\Persistence\Entities\";
         string targetFolder = Path.Combine(sourceFolder, "Partial");
         Directory.CreateDirectory(targetFolder);
+        Console.WriteLine(Directory.GetFiles(sourceFolder, "*.cs", SearchOption.TopDirectoryOnly).Count());
         foreach (var file in Directory.GetFiles(sourceFolder, "*.cs", SearchOption.TopDirectoryOnly))
         {
             // reading the old file/class
@@ -141,13 +199,5 @@ public partial class {className} //:BaseClass // ,IClub
         return finalPath;
     }
 
-    public class test
-    {
-        public string name;
-        public string path;
-        public void fun()
-        {
-            Console.WriteLine("fun is running\n");
-        }
-    }
+
 }
